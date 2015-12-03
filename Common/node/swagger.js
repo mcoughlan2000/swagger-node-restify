@@ -382,14 +382,17 @@ function addMethod(app, callback, spec) {
   root.apis.push(api);
   appendToApi(root, api, spec);
 
-  //  convert .{format} to .json, make path params happy
-  var fullPath = spec.path.replace(formatString, jsonSuffix).replace(/\/{/g, "/:").replace(/\}/g, "");
+  //  convert .{format} to .json, make path params happy, remove trailing slash
+  var fullPath = spec.path.replace(formatString, jsonSuffix)
+  .replace(/\/{/g, "/:")
+  .replace(/\}/g, "")
+  .replace(/\/$/, "");  // allows ending slash to be optional '/resource' and '/resource/'
   var currentMethod = spec.method.toLowerCase();
   if (currentMethod === 'delete') {
     currentMethod = 'del';
   }
   if (allowedMethods.indexOf(currentMethod) > -1) {
-    app[currentMethod](fullPath, function (req, res, next) {
+    var checkAccess = function (req, res, next) {
       exports.setHeaders(res);
 
       // todo: needs to do smarter matching against the defined paths
@@ -400,17 +403,12 @@ function addMethod(app, callback, spec) {
           "code": 403
         });
       } else {
-        try {
-          callback(req, res, next);
-        } catch (error) {
-          if (typeof errorHandler === "function") {
-            errorHandler(req, res, error);
-          } else {
-            throw error;
-          }
-        }
+        next();
       }
-    });
+    };
+
+    var pipeline = _.flatten([checkAccess, callback]);
+    app[currentMethod](fullPath, pipeline);
   } else {
     console.error('unable to add ' + currentMethod.toUpperCase() + ' handler');
     return;
